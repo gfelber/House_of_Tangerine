@@ -13,6 +13,8 @@
 #define SIZE_3 (0x80-HEADER)
 
 /**
+ * Tested on GLIBC 2.31 and 2.27 (x86_64)
+ *
  * House of Tangerine abuses a _int_free call to the top chunk in sysmalloc 
  * to corrupt heap without needing to call free() directly
  * additionally this version doesn't require the modification of previous chunks 
